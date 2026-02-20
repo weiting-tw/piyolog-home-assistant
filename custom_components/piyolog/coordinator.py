@@ -250,7 +250,7 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
     def _parse_datetime_jst(self, datetime_str: Optional[str]) -> Optional[datetime]:
         """Parse PiyoLog "YYYYMMDD HH:mm" or ISO string to JST-aware datetime.
 
-        PiyoLog assumes JST. Comparisons and duration math (e.g. sleep_minutes)
+        PiyoLog assumes JST. Comparisons and duration math (e.g. asleep_minutes)
         use these so all values are in the same timezone.
         """
         if not datetime_str:
@@ -285,7 +285,7 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
 
         Args:
             event: Baby event dict from PiyoLog API.
-            all_events: Optional list of all baby events (used to compute sleep_minutes
+            all_events: Optional list of all baby events (used to compute asleep_minutes
                 for wake_up from the preceding sleep event).
 
         Returns:
@@ -323,7 +323,7 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
                     if dt and dt < wake_dt and (last_sleep_dt is None or dt > last_sleep_dt):
                         last_sleep_dt = dt
                 if last_sleep_dt is not None:
-                    attrs["sleep_minutes"] = int((wake_dt - last_sleep_dt).total_seconds() / 60)
+                    attrs["asleep_minutes"] = int((wake_dt - last_sleep_dt).total_seconds() / 60)
 
         if event_type == EventType.MILK and amount > 0:
             attrs["amount"] = amount
@@ -367,7 +367,7 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
 
         Args:
             event: Baby event dict from PiyoLog API
-            all_events: Optional list of all baby events (for sleep_minutes on wake_up)
+            all_events: Optional list of all baby events (for asleep_minutes on wake_up)
         """
         ha_event_data = self.build_event_attributes(event, all_events)
         event_type_name = ha_event_data["event_type"]
