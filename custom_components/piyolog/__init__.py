@@ -9,7 +9,6 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.event import async_track_time_interval
 
 from .client import PiyoLogClient, BreastfeedingOrder
 from .coordinator import PiyoLogCoordinator, UpdateFailed
@@ -135,22 +134,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Set up options update listener
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-
-    # Schedule periodic refreshes using track_time_interval
-    async def _periodic_refresh(_now=None):
-        """Trigger periodic refreshes."""
-        _LOGGER.debug("Periodic sync trigger")
-        try:
-            await coordinator.async_request_refresh()
-        except Exception as e:
-            _LOGGER.error("Periodic sync failed: %s", e)
-
-    # Register the periodic refresh and store the unsubscribe callable
-    refresh_interval = timedelta(seconds=sync_interval_seconds)
-    unsubscribe = async_track_time_interval(hass, _periodic_refresh, refresh_interval)
-
-    # Register for cleanup on unload
-    entry.async_on_unload(unsubscribe)
 
     _LOGGER.info(
         "PiyoLog integration setup complete (sync interval: %ds)", sync_interval_seconds
