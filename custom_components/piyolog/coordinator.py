@@ -79,9 +79,11 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
         self.client = client
         self._seen_event_ids: Set[str] = set()
         self._babies_cache: Dict[str, str] = {}  # baby_id -> baby_name mapping
-        self._is_first_sync = (
-            True  # Track first sync to avoid firing all historical events
-        )
+        self._is_first_sync = True  # Track first sync to avoid firing all historical events
+        # Accumulated latest event per (baby_id, event_type) across all syncs.
+        # Kept in memory so delta syncs (which return 0 total events when nothing is new)
+        # don't wipe out the data.
+        self._last_events: Dict[tuple, Dict[str, Any]] = {}
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from PiyoLog API.
@@ -141,13 +143,15 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
                 len(self._seen_event_ids),
             )
 
-            # Latest event per (baby_id, event_type) by event time (not retrieval time)
-            last_events = self._compute_latest_events_by_time(baby_events)
+            # Merge this sync's events into the persistent last_events accumulator.
+            # Delta syncs may return 0 events when nothing is new -- that's fine,
+            # _last_events already holds the data from the first full sync.
+            self._update_last_events(baby_events)
 
             return {
                 "baby_events": baby_events,
                 "new_events": new_events,
-                "last_events": last_events,
+                "last_events": self._last_events,
                 "last_sync": response.get("main_version"),
                 "sync_count": len(baby_events),
             }
@@ -218,19 +222,16 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
 
         return new_events
 
-    def _compute_latest_events_by_time(
-        self, events: list
-    ) -> Dict[tuple, Dict[str, Any]]:
-        """Compute the latest event per (baby_id, event_type) by event datetime.
+    def _update_last_events(self, events: list) -> None:
+        """Merge events into self._last_events, keeping the latest per (baby_id, event_type).
+
+        Called after every sync (including delta syncs that return 0 events).
+        self._last_events accumulates across syncs so data isn't lost when
+        subsequent delta syncs return an empty baby_event list.
 
         Args:
-            events: List of baby event dicts from API.
-
-        Returns:
-            Dict mapping (baby_id, event_type) -> event dict for the most recent
-            event of that type for that baby (by the event's own datetime).
+            events: List of non-deleted baby event dicts from this sync.
         """
-        last_events: Dict[tuple, Dict[str, Any]] = {}
         for event in events:
             baby_id = event.get("baby_id")
             event_type = event.get("type")
@@ -239,13 +240,12 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
             dt_iso = self._format_datetime_iso(event.get("datetime"))
             if not dt_iso:
                 continue
-            key = (baby_id, event_type)
-            existing = last_events.get(key)
+            key = (str(baby_id), int(event_type))
+            existing = self._last_events.get(key)
             if existing is None or dt_iso > self._format_datetime_iso(
                 existing.get("datetime")
             ):
-                last_events[key] = event
-        return last_events
+                self._last_events[key] = event
 
     def _parse_datetime_jst(self, datetime_str: Optional[str]) -> Optional[datetime]:
         """Parse PiyoLog "YYYYMMDD HH:mm" or ISO string to JST-aware datetime.
