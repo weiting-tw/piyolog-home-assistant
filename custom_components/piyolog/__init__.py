@@ -191,6 +191,17 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
     """Register PiyoLog services."""
 
+    async def _refresh_after_add() -> None:
+        """Request coordinator refresh so new event is fetched and HA event is fired."""
+        if not hass.data.get(DOMAIN):
+            return
+        entry_id = next(iter(hass.data[DOMAIN]), None)
+        if not entry_id:
+            return
+        coordinator = hass.data[DOMAIN][entry_id].get("coordinator")
+        if coordinator:
+            await coordinator.async_request_refresh()
+
     async def add_pee_service(call: ServiceCall):
         """Handle add_pee service call."""
         baby_id = call.data.get(ATTR_BABY_ID)
@@ -203,6 +214,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 client.add_pee, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added pee event")
+            await _refresh_after_add()
         except Exception as err:
             _LOGGER.error("Failed to add pee event: %s", err)
             raise
@@ -241,6 +253,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 poo_hardness,
                 poo_color,
             )
+            await _refresh_after_add()
         except Exception as err:
             _LOGGER.error("Failed to add poo event: %s", err)
             raise
@@ -257,6 +270,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 client.add_sleep_begin, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added sleep event")
+            await _refresh_after_add()
         except Exception as err:
             _LOGGER.error("Failed to add sleep event: %s", err)
             raise
@@ -273,6 +287,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 client.add_sleep_end, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added wake up event")
+            await _refresh_after_add()
         except Exception as err:
             _LOGGER.error("Failed to add wake up event: %s", err)
             raise
@@ -289,6 +304,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 client.add_bath, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added bath event")
+            await _refresh_after_add()
         except Exception as err:
             _LOGGER.error("Failed to add bath event: %s", err)
             raise
@@ -305,6 +321,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 client.add_walking, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added walk event")
+            await _refresh_after_add()
         except Exception as err:
             _LOGGER.error("Failed to add walk event: %s", err)
             raise
@@ -349,6 +366,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 hardness,
                 color,
             )
+            await _refresh_after_add()
         except Exception as err:
             _LOGGER.error("Failed to add pee and poo events: %s", err)
             raise
@@ -366,6 +384,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 client.add_milk, amount, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added milk event: %sml", amount)
+            await _refresh_after_add()
         except Exception as err:
             _LOGGER.error("Failed to add milk event: %s", err)
             raise
@@ -400,6 +419,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
             if amount > 0:
                 log_msg += f" Amount={amount}ml"
             _LOGGER.info(log_msg)
+            await _refresh_after_add()
         except Exception as err:
             _LOGGER.error("Failed to add breastfeeding event: %s", err)
             raise
