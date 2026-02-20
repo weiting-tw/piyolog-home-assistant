@@ -130,6 +130,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services
     await _async_register_services(hass, client)
 
+    # Set up sensor platform (last-event sensors)
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+
     # Set up options update listener
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
@@ -158,6 +161,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    # Unload sensor platform first
+    await hass.config_entries.async_forward_entry_unload(entry, "sensor")
+
     # Remove entry data (refresh task is cancelled via entry.async_on_unload)
     entry_data = hass.data[DOMAIN].pop(entry.entry_id)
     _LOGGER.debug("Unloading PiyoLog entry")

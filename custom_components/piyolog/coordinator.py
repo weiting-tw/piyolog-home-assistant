@@ -137,9 +137,13 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
                 len(self._seen_event_ids),
             )
 
+            # Latest event per (baby_id, event_type) by event time (not retrieval time)
+            last_events = self._compute_latest_events_by_time(baby_events)
+
             return {
                 "baby_events": baby_events,
                 "new_events": new_events,
+                "last_events": last_events,
                 "last_sync": response.get("main_version"),
                 "sync_count": len(baby_events),
             }
@@ -210,106 +214,116 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
 
         return new_events
 
+    def _compute_latest_events_by_time(
+        self, events: list
+    ) -> Dict[tuple, Dict[str, Any]]:
+        """Compute the latest event per (baby_id, event_type) by event datetime.
+
+        Args:
+            events: List of baby event dicts from API.
+
+        Returns:
+            Dict mapping (baby_id, event_type) -> event dict for the most recent
+            event of that type for that baby (by the event's own datetime).
+        """
+        last_events: Dict[tuple, Dict[str, Any]] = {}
+        for event in events:
+            baby_id = event.get("baby_id")
+            event_type = event.get("type")
+            if baby_id is None or event_type is None:
+                continue
+            dt_iso = self._format_datetime_iso(event.get("datetime"))
+            if not dt_iso:
+                continue
+            key = (baby_id, event_type)
+            existing = last_events.get(key)
+            if existing is None or dt_iso > self._format_datetime_iso(
+                existing.get("datetime")
+            ):
+                last_events[key] = event
+        return last_events
+
+    def build_event_attributes(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Build HA-style attribute dict for a baby event (for sensors / events).
+
+        Args:
+            event: Baby event dict from PiyoLog API.
+
+        Returns:
+            Dict of attributes (event_id, baby_id, baby_name, event_type,
+            datetime, memo, and type-specific fields like amount, poo_amount).
+        """
+        event_type = event.get("type")
+        event_type_name = EVENT_TYPE_NAMES.get(event_type, "unknown")
+
+        baby_id = event.get("baby_id")
+        baby_name = self._babies_cache.get(baby_id, "")
+
+        attrs: Dict[str, Any] = {
+            "event_id": event.get("event_id"),
+            "baby_id": baby_id,
+            "baby_name": baby_name,
+            "event_type": event_type_name,
+            "datetime": self._format_datetime_iso(event.get("datetime")),
+            "memo": event.get("memo", ""),
+        }
+
+        amount = event.get("amount", 0)
+        value = event.get("value", 0)
+        left_time = event.get("left_time", 0)
+        right_time = event.get("right_time", 0)
+
+        if event_type == EventType.MILK and amount > 0:
+            attrs["amount"] = amount
+        elif event_type == EventType.MOTHERS_MILK:
+            if amount > 0:
+                attrs["amount"] = amount
+            if left_time > 0:
+                attrs["breastfeeding_left_minutes"] = left_time // 60
+            if right_time > 0:
+                attrs["breastfeeding_right_minutes"] = right_time // 60
+            if value > 0:
+                attrs["breastfeeding_order"] = BREASTFEEDING_ORDER_REVERSE.get(
+                    value, "unspecified"
+                )
+        elif event_type == EventType.POO:
+            if amount > 0:
+                attrs["poo_amount"] = POOP_AMOUNT_REVERSE.get(amount, "normal")
+            if value > 0:
+                attrs["poo_hardness"] = POOP_HARDNESS_REVERSE.get(value, "normal")
+            if left_time > 0:
+                attrs["poo_color"] = POOP_COLOR_REVERSE.get(left_time, "brown")
+        elif event_type == EventType.BODY_TEMPERATURE and value > 0:
+            attrs["temperature"] = value
+        elif event_type == EventType.BODY_WEIGHT and value > 0:
+            attrs["weight"] = value
+        elif event_type == EventType.BODY_HEIGHT and value > 0:
+            attrs["height"] = value
+        elif event_type == EventType.HEAD and value > 0:
+            attrs["head_circumference"] = value
+        elif event_type == EventType.CHEST and value > 0:
+            attrs["chest_circumference"] = value
+        elif event_type in [EventType.MILKING, EventType.PUMPING] and amount > 0:
+            attrs["amount"] = amount
+
+        return attrs
+
     def _fire_ha_event(self, event: Dict[str, Any]) -> None:
         """Fire a Home Assistant event for a PiyoLog baby event.
 
         Args:
             event: Baby event dict from PiyoLog API
         """
-        event_type = event.get("type")
-        event_type_name = EVENT_TYPE_NAMES.get(event_type, "unknown")
-
-        # Get baby name from cache
-        baby_id = event.get("baby_id")
-        if baby_id in self._babies_cache:
-            baby_name = self._babies_cache[baby_id]
-        else:
-            baby_name = ""
-            if self._babies_cache:
-                _LOGGER.warning(
-                    "Baby ID '%s' not found in cache. Cache has %d babies: %s",
-                    baby_id,
-                    len(self._babies_cache),
-                    list(self._babies_cache.keys()),
-                )
-
-        # Build base event data (always included)
-        ha_event_data = {
-            "event_id": event.get("event_id"),
-            "baby_id": baby_id,
-            "baby_name": baby_name,
-            "event_type": event_type_name,
-            "datetime": self._format_datetime_iso(event.get("datetime")),  # ISO 8601
-            "memo": event.get("memo", ""),
-        }
-
-        # Add event-specific fields based on type
-        amount = event.get("amount", 0)
-        value = event.get("value", 0)
-        left_time = event.get("left_time", 0)
-        right_time = event.get("right_time", 0)
-
-        # Milk/formula events
-        if event_type == EventType.MILK and amount > 0:
-            ha_event_data["amount"] = amount
-
-        # Breastfeeding events
-        elif event_type == EventType.MOTHERS_MILK:
-            if amount > 0:  # Amount in ml
-                ha_event_data["amount"] = amount
-            if left_time > 0:
-                ha_event_data["breastfeeding_left_minutes"] = left_time // 60
-            if right_time > 0:
-                ha_event_data["breastfeeding_right_minutes"] = right_time // 60
-            if value > 0:  # Breastfeeding order
-                ha_event_data["breastfeeding_order"] = BREASTFEEDING_ORDER_REVERSE.get(
-                    value, "unspecified"
-                )
-
-        # Poo events
-        elif event_type == EventType.POO:
-            if amount > 0:  # PoopAmount
-                ha_event_data["poo_amount"] = POOP_AMOUNT_REVERSE.get(amount, "normal")
-            if value > 0:  # PoopHardness
-                ha_event_data["poo_hardness"] = POOP_HARDNESS_REVERSE.get(
-                    value, "normal"
-                )
-            if left_time > 0:  # PoopColor
-                ha_event_data["poo_color"] = POOP_COLOR_REVERSE.get(left_time, "brown")
-
-        # Temperature events
-        elif event_type == EventType.BODY_TEMPERATURE and value > 0:
-            ha_event_data["temperature"] = value
-
-        # Weight events
-        elif event_type == EventType.BODY_WEIGHT and value > 0:
-            ha_event_data["weight"] = value
-
-        # Height events
-        elif event_type == EventType.BODY_HEIGHT and value > 0:
-            ha_event_data["height"] = value
-
-        # Head circumference
-        elif event_type == EventType.HEAD and value > 0:
-            ha_event_data["head_circumference"] = value
-
-        # Chest circumference
-        elif event_type == EventType.CHEST and value > 0:
-            ha_event_data["chest_circumference"] = value
-
-        # Expressed breast milk / pumping
-        elif event_type in [EventType.MILKING, EventType.PUMPING] and amount > 0:
-            ha_event_data["amount"] = amount
-
-        # Fire the event
+        ha_event_data = self.build_event_attributes(event)
+        event_type_name = ha_event_data["event_type"]
         event_name = f"piyolog_event_{event_type_name}"
         self.hass.bus.fire(event_name, ha_event_data)
 
         _LOGGER.debug(
             "Fired HA event: %s for baby %s (%s) at %s",
             event_name,
-            baby_name,
-            baby_id,
+            ha_event_data["baby_name"],
+            ha_event_data["baby_id"],
             ha_event_data["datetime"],
         )
 
