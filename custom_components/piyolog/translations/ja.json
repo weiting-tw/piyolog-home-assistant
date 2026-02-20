@@ -9,6 +9,12 @@
         },
         "data_description": {
           "auth_method": "新しいアカウントを作成してリンクするか、既存の認証情報を使用します"
+        },
+        "options": {
+          "auth_method": {
+            "create_new": "新しいアカウントを作成して既存アカウントにリンク",
+            "use_existing": "既存の認証情報を使用"
+          }
         }
       },
       "create": {
@@ -70,7 +76,7 @@
       "fields": {
         "baby_id": { "name": "赤ちゃんID", "description": "赤ちゃんID（省略時はデフォルトを使用）" },
         "baby_index": { "name": "赤ちゃんの番号", "description": "赤ちゃんのインデックス（0から、省略可）" },
-        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在）" },
+        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在時刻）" },
         "memo": { "name": "メモ", "description": "任意のメモ" }
       }
     },
@@ -83,85 +89,85 @@
         "poo_color": { "name": "色", "description": "うんちの色（省略可）" },
         "baby_id": { "name": "赤ちゃんID", "description": "赤ちゃんID（省略時はデフォルトを使用）" },
         "baby_index": { "name": "赤ちゃんの番号", "description": "赤ちゃんのインデックス（0から、省略可）" },
-        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在）" },
+        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在時刻）" },
         "memo": { "name": "メモ", "description": "任意のメモ" }
       }
     },
     "add_sleep": {
-      "name": "睡眠開始を記録",
-      "description": "ぴよログに睡眠開始イベントを登録",
+      "name": "「寝る」を記録",
+      "description": "ぴよログに「寝る」イベントを登録",
       "fields": {
         "baby_id": { "name": "赤ちゃんID", "description": "赤ちゃんID（省略時はデフォルトを使用）" },
         "baby_index": { "name": "赤ちゃんの番号", "description": "赤ちゃんのインデックス（0から、省略可）" },
-        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在）" },
+        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在時刻）" },
         "memo": { "name": "メモ", "description": "任意のメモ" }
       }
     },
     "add_wake_up": {
-      "name": "起床を記録",
-      "description": "ぴよログに起床イベントを登録",
+      "name": "「起きる」を記録",
+      "description": "ぴよログに「起きる」イベントを登録",
       "fields": {
         "baby_id": { "name": "赤ちゃんID", "description": "赤ちゃんID（省略時はデフォルトを使用）" },
         "baby_index": { "name": "赤ちゃんの番号", "description": "赤ちゃんのインデックス（0から、省略可）" },
-        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在）" },
+        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在時刻）" },
         "memo": { "name": "メモ", "description": "任意のメモ" }
       }
     },
     "add_pee_and_poo": {
-      "name": "おしっことうんちを記録",
-      "description": "ぴよログにおしっことうんちの両方を登録",
+      "name": "「おしっこ」と「うんち」を記録",
+      "description": "ぴよログに「おしっこ」と「うんち」の両方を登録",
       "fields": {
         "poo_amount": { "name": "うんちの量", "description": "うんちの量（省略可）" },
         "poo_hardness": { "name": "うんちの硬さ", "description": "うんちの硬さ・状態（省略可）" },
         "poo_color": { "name": "うんちの色", "description": "うんちの色（省略可）" },
         "baby_id": { "name": "赤ちゃんID", "description": "赤ちゃんID（省略時はデフォルトを使用）" },
         "baby_index": { "name": "赤ちゃんの番号", "description": "赤ちゃんのインデックス（0から、省略可）" },
-        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在）" },
+        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在時刻）" },
         "memo": { "name": "メモ", "description": "任意のメモ" }
       }
     },
     "add_milk": {
-      "name": "ミルクを記録",
-      "description": "ミルク・哺乳の記録を登録",
+      "name": "「ミルク」を記録",
+      "description": "ぴよログに「ミルク」イベントを登録",
       "fields": {
         "amount": { "name": "量（ml）", "description": "ミルクの量（ミリリットル）" },
         "baby_id": { "name": "赤ちゃんID", "description": "赤ちゃんID（省略時はデフォルトを使用）" },
         "baby_index": { "name": "赤ちゃんの番号", "description": "赤ちゃんのインデックス（0から、省略可）" },
-        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在）" },
+        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在時刻）" },
         "memo": { "name": "メモ", "description": "任意のメモ" }
       }
     },
     "add_breastfeeding": {
-      "name": "母乳を記録",
-      "description": "母乳授乳イベントを登録",
+      "name": "「母乳」を記録",
+      "description": "ぴよログに「母乳」イベントを登録",
       "fields": {
-        "breastfeeding_left_minutes": { "name": "左乳房（分）", "description": "左の授乳時間（分）" },
-        "breastfeeding_right_minutes": { "name": "右乳房（分）", "description": "右の授乳時間（分）" },
-        "breastfeeding_order": { "name": "授乳順", "description": "どちらの乳房を先に使ったか" },
-        "amount": { "name": "量（ml）", "description": "ml単位の量（搾乳量の記録用、省略可）" },
+        "breastfeeding_left_minutes": { "name": "左（分）", "description": "左の授乳時間（分、省略可）" },
+        "breastfeeding_right_minutes": { "name": "右（分）", "description": "右の授乳時間（分、省略可）" },
+        "breastfeeding_order": { "name": "授乳順", "description": "授乳の順番（省略可）" },
+        "amount": { "name": "量（ml）", "description": "ml単位の量（授乳量の記録用、省略可）" },
         "baby_id": { "name": "赤ちゃんID", "description": "赤ちゃんID（省略時はデフォルトを使用）" },
         "baby_index": { "name": "赤ちゃんの番号", "description": "赤ちゃんのインデックス（0から、省略可）" },
-        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在）" },
+        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在時刻）" },
         "memo": { "name": "メモ", "description": "任意のメモ" }
       }
     },
     "add_bath": {
-      "name": "お風呂を記録",
-      "description": "ぴよログにお風呂イベントを登録",
+      "name": "「お風呂」を記録",
+      "description": "ぴよログに「お風呂」イベントを登録",
       "fields": {
         "baby_id": { "name": "赤ちゃんID", "description": "赤ちゃんID（省略時はデフォルトを使用）" },
         "baby_index": { "name": "赤ちゃんの番号", "description": "赤ちゃんのインデックス（0から、省略可）" },
-        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在）" },
+        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在時刻）" },
         "memo": { "name": "メモ", "description": "任意のメモ" }
       }
     },
     "add_walk": {
-      "name": "お散歩を記録",
-      "description": "ぴよログに散歩・おでかけイベントを登録",
+      "name": "「さんぽ」を記録",
+      "description": "ぴよログに「さんぽ」イベントを登録",
       "fields": {
         "baby_id": { "name": "赤ちゃんID", "description": "赤ちゃんID（省略時はデフォルトを使用）" },
         "baby_index": { "name": "赤ちゃんの番号", "description": "赤ちゃんのインデックス（0から、省略可）" },
-        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在）" },
+        "datetime": { "name": "日時", "description": "イベント日時（省略時は現在時刻）" },
         "memo": { "name": "メモ", "description": "任意のメモ" }
       }
     },

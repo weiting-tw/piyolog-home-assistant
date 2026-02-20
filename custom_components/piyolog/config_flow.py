@@ -9,6 +9,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     DOMAIN,
@@ -25,16 +26,26 @@ from .client import PiyoLogClient
 
 _LOGGER = logging.getLogger(__name__)
 
-STEP_CHOICE_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required("auth_method", default="create_new"): vol.In(
-            {
-                "create_new": "Create new account and link to existing",
-                "use_existing": "Use existing credentials",
-            }
-        ),
-    }
-)
+def _auth_method_schema(translations: dict) -> vol.Schema:
+    """Build user step schema with translated auth_method option labels."""
+    create_new = "Create new account and link to existing"
+    use_existing = "Use existing credentials"
+    if translations:
+        # HA flattens with prefix component.{domain}.config.
+        prefix = f"component.{DOMAIN}.config."
+        create_new = translations.get(
+            f"{prefix}step.user.options.auth_method.create_new", create_new
+        )
+        use_existing = translations.get(
+            f"{prefix}step.user.options.auth_method.use_existing", use_existing
+        )
+    return vol.Schema(
+        {
+            vol.Required("auth_method", default="create_new"): vol.In(
+                {"create_new": create_new, "use_existing": use_existing}
+            ),
+        }
+    )
 
 STEP_CREATE_DATA_SCHEMA = vol.Schema(
     {
@@ -81,9 +92,18 @@ class PiyoLogConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 return await self.async_step_existing()
 
+        try:
+            translations = await async_get_translations(
+                self.hass,
+                self.hass.config.language,
+                "config",
+                integrations=[DOMAIN],
+            )
+        except Exception:  # noqa: BLE001
+            translations = {}
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_CHOICE_DATA_SCHEMA,
+            data_schema=_auth_method_schema(translations),
         )
 
     async def async_step_create(

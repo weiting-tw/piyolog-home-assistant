@@ -9,6 +9,12 @@
         },
         "data_description": {
           "auth_method": "Create new account and link it, or use existing credentials"
+        },
+        "options": {
+          "auth_method": {
+            "create_new": "Create new account and link to existing",
+            "use_existing": "Use existing credentials"
+          }
         }
       },
       "create": {
