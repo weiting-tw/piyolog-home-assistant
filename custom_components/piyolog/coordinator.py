@@ -84,6 +84,10 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
         # Kept in memory so delta syncs (which return 0 total events when nothing is new)
         # don't wipe out the data.
         self._last_events: Dict[tuple, Dict[str, Any]] = {}
+        # All SLEEP_BEGIN events accumulated across syncs (needed to find the correct
+        # preceding sleep for asleep_minutes even after subsequent sleep sessions).
+        self._all_sleep_begin_events: List[Dict[str, Any]] = []
+        self._seen_sleep_begin_ids: Set[str] = set()
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from PiyoLog API.
@@ -134,7 +138,7 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
             elif new_events:
                 _LOGGER.info("Firing %d new event(s)", len(new_events))
                 for event in new_events:
-                    self._fire_ha_event(event, baby_events)
+                    self._fire_ha_event(event)
 
             _LOGGER.debug(
                 "Sync: %d total, %d new, %d tracked",
@@ -247,6 +251,14 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
             ):
                 self._last_events[key] = event
 
+            # Accumulate every SLEEP_BEGIN seen so asleep_minutes can always be
+            # computed correctly even after the baby has fallen asleep again.
+            if int(event_type) == EventType.SLEEP_BEGIN:
+                event_id = event.get("event_id")
+                if event_id and event_id not in self._seen_sleep_begin_ids:
+                    self._seen_sleep_begin_ids.add(event_id)
+                    self._all_sleep_begin_events.append(event)
+
     def _parse_datetime_jst(self, datetime_str: Optional[str]) -> Optional[datetime]:
         """Parse PiyoLog "YYYYMMDD HH:mm" or ISO string to JST-aware datetime.
 
@@ -259,8 +271,8 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
         if not s:
             return None
         try:
-            if " " in s and len(s) >= 15 and s[8:9] == " ":
-                # PiyoLog format: "20260209 14:30"
+            if " " in s and len(s) >= 14 and s[8:9] == " ":
+                # PiyoLog format: "20260209 14:30" (14 chars)
                 date_part, time_part = s.split(None, 1)
                 year = int(date_part[0:4])
                 month = int(date_part[4:6])
@@ -278,15 +290,13 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
         except (ValueError, TypeError, IndexError):
             return None
 
-    def build_event_attributes(
-        self, event: Dict[str, Any], all_events: Optional[List[Dict[str, Any]]] = None
-    ) -> Dict[str, Any]:
+    def build_event_attributes(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """Build HA-style attribute dict for a baby event (for sensors / events).
+
+        For SLEEP_END events, asleep_minutes is computed from self._all_sleep_begin_events.
 
         Args:
             event: Baby event dict from PiyoLog API.
-            all_events: Optional list of all baby events (used to compute asleep_minutes
-                for wake_up from the preceding sleep event).
 
         Returns:
             Dict of attributes (event_id, baby_id, baby_name, event_type,
@@ -312,12 +322,12 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
         left_time = event.get("left_time", 0)
         right_time = event.get("right_time", 0)
 
-        if event_type == EventType.SLEEP_END and all_events:
+        if event_type == EventType.SLEEP_END:
             wake_dt = self._parse_datetime_jst(event.get("datetime"))
             if wake_dt:
                 last_sleep_dt: Optional[datetime] = None
-                for e in all_events:
-                    if e.get("baby_id") != baby_id or e.get("type") != EventType.SLEEP_BEGIN:
+                for e in self._all_sleep_begin_events:
+                    if str(e.get("baby_id")) != str(baby_id):
                         continue
                     dt = self._parse_datetime_jst(e.get("datetime"))
                     if dt and dt < wake_dt and (last_sleep_dt is None or dt > last_sleep_dt):
@@ -360,16 +370,13 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
 
         return attrs
 
-    def _fire_ha_event(
-        self, event: Dict[str, Any], all_events: Optional[List[Dict[str, Any]]] = None
-    ) -> None:
+    def _fire_ha_event(self, event: Dict[str, Any]) -> None:
         """Fire a Home Assistant event for a PiyoLog baby event.
 
         Args:
             event: Baby event dict from PiyoLog API
-            all_events: Optional list of all baby events (for asleep_minutes on wake_up)
         """
-        ha_event_data = self.build_event_attributes(event, all_events)
+        ha_event_data = self.build_event_attributes(event)
         event_type_name = ha_event_data["event_type"]
         event_name = f"piyolog_event_{event_type_name}"
         self.hass.bus.fire(event_name, ha_event_data)

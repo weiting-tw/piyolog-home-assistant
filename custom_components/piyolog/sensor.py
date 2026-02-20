@@ -138,11 +138,7 @@ class PiyoLogLastEventSensor(CoordinatorEntity[PiyoLogCoordinator], SensorEntity
         event = self._get_latest_event()
         if not event:
             return {}
-        # Pass all accumulated last_events values as the pool for sleep duration lookup.
-        # coordinator.data["baby_events"] only holds the most recent delta (often empty),
-        # so we use _last_events which is the full accumulated view across all syncs.
-        all_events = list(self.coordinator._last_events.values())
-        return self.coordinator.build_event_attributes(event, all_events)
+        return self.coordinator.build_event_attributes(event)
 
     def _get_latest_event(self) -> Optional[dict]:
         """Get the latest event for this baby and event type from coordinator data."""
