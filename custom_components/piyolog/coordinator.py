@@ -115,8 +115,9 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
                 if babies:  # Only update if we got actual baby data
                     self._update_baby_cache(babies)
 
-            # Process baby events
-            baby_events = data.get("baby_event", [])
+            # Process baby events (ignore soft-deleted)
+            raw_events = data.get("baby_event", [])
+            baby_events = [e for e in raw_events if not e.get("deleted")]
             new_events = self._process_events(baby_events)
 
             # Fire Home Assistant events for new baby events
