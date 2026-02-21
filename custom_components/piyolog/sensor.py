@@ -6,11 +6,13 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, EVENT_TYPE_NAMES
 from .coordinator import PiyoLogCoordinator
@@ -67,7 +69,7 @@ async def async_setup_entry(
         _LOGGER.debug("No babies in cache yet; no last-event sensors created")
         return
 
-    entities: list[PiyoLogLastEventSensor] = []
+    entities: list[SensorEntity] = []
     entry_id = entry.entry_id
     for baby_id in baby_ids:
         baby_name = coordinator._babies_cache.get(baby_id, "")
@@ -82,13 +84,23 @@ async def async_setup_entry(
                     event_type_name=type_name,
                 )
             )
+        # One breastfeeding-today sensor per baby
+        entities.append(
+            PiyoLogBreastfeedingTodaySensor(
+                coordinator=coordinator,
+                entry_id=entry_id,
+                baby_id=baby_id,
+                baby_name=baby_name,
+            )
+        )
 
     async_add_entities(entities)
     _LOGGER.info(
-        "Added %d PiyoLog last-event sensors (%d babies × %d event types)",
+        "Added %d PiyoLog sensors (%d babies × %d event types + %d breastfeeding-today)",
         len(entities),
         len(baby_ids),
         len(EVENT_TYPE_NAMES),
+        len(baby_ids),
     )
 
 
@@ -144,6 +156,71 @@ class PiyoLogLastEventSensor(CoordinatorEntity[PiyoLogCoordinator], SensorEntity
         """Get the latest event for this baby and event type from coordinator data."""
         key = (str(self._baby_id), int(self._event_type))
         return self.coordinator._last_events.get(key)
+
+
+class PiyoLogBreastfeedingTodaySensor(CoordinatorEntity[PiyoLogCoordinator], SensorEntity):
+    """Sensor showing cumulative breastfeeding minutes today (HA system timezone)."""
+
+    _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_icon = "mdi:mother-nurse"
+
+    def __init__(
+        self,
+        coordinator: PiyoLogCoordinator,
+        entry_id: str,
+        baby_id: str,
+        baby_name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._baby_id = baby_id
+
+        name_suffix = f"PiyoLog Breastfeeding Today"
+        if baby_name:
+            name_suffix = f"{name_suffix} ({baby_name})"
+        self._attr_name = name_suffix
+        self._attr_unique_id = f"{entry_id}_{baby_id}_breastfeeding_today"
+
+    @property
+    def native_value(self) -> int:
+        """Total breastfeeding minutes today (left + right)."""
+        left, right, _ = self._today_totals()
+        return left + right
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Left minutes, right minutes, and session count for today."""
+        left, right, count = self._today_totals()
+        return {
+            "left_minutes": left,
+            "right_minutes": right,
+            "total_minutes": left + right,
+            "session_count": count,
+        }
+
+    def _today_totals(self) -> tuple[int, int, int]:
+        """Return (left_minutes, right_minutes, session_count) for today in HA timezone."""
+        today = dt_util.now().date()
+        left_sec = 0
+        right_sec = 0
+        count = 0
+        for e in self.coordinator._breastfeeding_events.values():
+            if str(e.get("baby_id")) != str(self._baby_id):
+                continue
+            dt = self.coordinator._parse_datetime_jst(e.get("datetime"))
+            if dt is None:
+                continue
+            # Convert to HA's configured timezone for "today" comparison
+            event_date = dt.astimezone(dt_util.DEFAULT_TIME_ZONE).date()
+            if event_date != today:
+                continue
+            left_sec += e.get("left_time", 0)
+            right_sec += e.get("right_time", 0)
+            count += 1
+        return left_sec // 60, right_sec // 60, count
 
 
 def _icon_for_event_type(event_type: int) -> str:

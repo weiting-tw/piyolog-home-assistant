@@ -180,16 +180,30 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
     """Register PiyoLog services."""
 
-    async def _refresh_after_add() -> None:
-        """Request coordinator refresh so new event is fetched and HA event is fired."""
+    async def _refresh_after_add(*responses: dict) -> None:
+        """Inject registration response events then request a coordinator refresh.
+
+        register_baby_event calls sync() which advances _main_version/_minor_version.
+        The subsequent delta sync therefore returns 0 events, so the newly created
+        event never lands in _last_events / _breastfeeding_events.  Processing
+        the registration response here fills that gap immediately.
+        """
         if not hass.data.get(DOMAIN):
             return
         entry_id = next(iter(hass.data[DOMAIN]), None)
         if not entry_id:
             return
         coordinator = hass.data[DOMAIN][entry_id].get("coordinator")
-        if coordinator:
-            await coordinator.async_request_refresh()
+        if not coordinator:
+            return
+        for response in responses:
+            if response and response.get("status") == 200:
+                raw = response.get("data", {}).get("baby_event", [])
+                baby_events = [e for e in raw if not e.get("deleted")]
+                coordinator._update_last_events(baby_events)
+                coordinator._update_sleep_begin_events(raw)
+                coordinator._update_breastfeeding_events(raw)
+        await coordinator.async_request_refresh()
 
     async def add_pee_service(call: ServiceCall):
         """Handle add_pee service call."""
@@ -199,11 +213,11 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
         memo = call.data.get(ATTR_MEMO, "")
 
         try:
-            await hass.async_add_executor_job(
+            response = await hass.async_add_executor_job(
                 client.add_pee, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added pee event")
-            await _refresh_after_add()
+            await _refresh_after_add(response)
         except Exception as err:
             _LOGGER.error("Failed to add pee event: %s", err)
             raise
@@ -226,7 +240,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
         poo_color = POOP_COLOR_MAP.get(color_str, 0) if color_str else None
 
         try:
-            await hass.async_add_executor_job(
+            response = await hass.async_add_executor_job(
                 client.add_poop,
                 poo_amount,
                 poo_hardness,
@@ -242,7 +256,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 poo_hardness,
                 poo_color,
             )
-            await _refresh_after_add()
+            await _refresh_after_add(response)
         except Exception as err:
             _LOGGER.error("Failed to add poo event: %s", err)
             raise
@@ -255,11 +269,11 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
         memo = call.data.get(ATTR_MEMO, "")
 
         try:
-            await hass.async_add_executor_job(
+            response = await hass.async_add_executor_job(
                 client.add_sleep_begin, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added sleep event")
-            await _refresh_after_add()
+            await _refresh_after_add(response)
         except Exception as err:
             _LOGGER.error("Failed to add sleep event: %s", err)
             raise
@@ -272,11 +286,11 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
         memo = call.data.get(ATTR_MEMO, "")
 
         try:
-            await hass.async_add_executor_job(
+            response = await hass.async_add_executor_job(
                 client.add_sleep_end, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added wake up event")
-            await _refresh_after_add()
+            await _refresh_after_add(response)
         except Exception as err:
             _LOGGER.error("Failed to add wake up event: %s", err)
             raise
@@ -289,11 +303,11 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
         memo = call.data.get(ATTR_MEMO, "")
 
         try:
-            await hass.async_add_executor_job(
+            response = await hass.async_add_executor_job(
                 client.add_bath, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added bath event")
-            await _refresh_after_add()
+            await _refresh_after_add(response)
         except Exception as err:
             _LOGGER.error("Failed to add bath event: %s", err)
             raise
@@ -306,11 +320,11 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
         memo = call.data.get(ATTR_MEMO, "")
 
         try:
-            await hass.async_add_executor_job(
+            response = await hass.async_add_executor_job(
                 client.add_walking, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added walk event")
-            await _refresh_after_add()
+            await _refresh_after_add(response)
         except Exception as err:
             _LOGGER.error("Failed to add walk event: %s", err)
             raise
@@ -336,10 +350,10 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
 
         try:
             # Register both PEE and POO events with same timestamp
-            await hass.async_add_executor_job(
+            response_pee = await hass.async_add_executor_job(
                 client.add_pee, datetime_str, baby_id, baby_index, memo
             )
-            await hass.async_add_executor_job(
+            response_poo = await hass.async_add_executor_job(
                 client.add_poop,
                 poo_amount,
                 hardness,
@@ -355,7 +369,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
                 hardness,
                 color,
             )
-            await _refresh_after_add()
+            await _refresh_after_add(response_pee, response_poo)
         except Exception as err:
             _LOGGER.error("Failed to add pee and poo events: %s", err)
             raise
@@ -369,11 +383,11 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
         amount = call.data.get(ATTR_AMOUNT, DEFAULT_MILK_AMOUNT)
 
         try:
-            await hass.async_add_executor_job(
+            response = await hass.async_add_executor_job(
                 client.add_milk, amount, datetime_str, baby_id, baby_index, memo
             )
             _LOGGER.info("Successfully added milk event: %sml", amount)
-            await _refresh_after_add()
+            await _refresh_after_add(response)
         except Exception as err:
             _LOGGER.error("Failed to add milk event: %s", err)
             raise
@@ -393,7 +407,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
         order = BREASTFEEDING_ORDER_MAP.get(order_str, BreastfeedingOrder.UNSPECIFIED)
 
         try:
-            await hass.async_add_executor_job(
+            response = await hass.async_add_executor_job(
                 client.add_breastfeeding,
                 left_minutes,
                 right_minutes,
@@ -408,7 +422,7 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
             if amount > 0:
                 log_msg += f" Amount={amount}ml"
             _LOGGER.info(log_msg)
-            await _refresh_after_add()
+            await _refresh_after_add(response)
         except Exception as err:
             _LOGGER.error("Failed to add breastfeeding event: %s", err)
             raise

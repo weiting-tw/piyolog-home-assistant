@@ -84,10 +84,13 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
         # Kept in memory so delta syncs (which return 0 total events when nothing is new)
         # don't wipe out the data.
         self._last_events: Dict[tuple, Dict[str, Any]] = {}
-        # All SLEEP_BEGIN events accumulated across syncs (needed to find the correct
-        # preceding sleep for asleep_minutes even after subsequent sleep sessions).
-        self._all_sleep_begin_events: List[Dict[str, Any]] = []
-        self._seen_sleep_begin_ids: Set[str] = set()
+        # SLEEP_BEGIN events keyed by event_id (needed to find the correct preceding
+        # sleep for asleep_minutes even after subsequent sleep sessions).
+        # Dict allows deletions and edits to be reflected without a full restart.
+        self._sleep_begin_events: Dict[str, Dict[str, Any]] = {}
+        # MOTHERS_MILK events keyed by event_id (for today's cumulative sensor).
+        # Using a dict allows deletions and edits to be reflected without a full restart.
+        self._breastfeeding_events: Dict[str, Dict[str, Any]] = {}
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from PiyoLog API.
@@ -151,6 +154,10 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
             # Delta syncs may return 0 events when nothing is new -- that's fine,
             # _last_events already holds the data from the first full sync.
             self._update_last_events(baby_events)
+            # Update sleep/breastfeeding dicts with raw events (including deleted) so
+            # that deletions and edits are immediately reflected in sensors.
+            self._update_sleep_begin_events(raw_events)
+            self._update_breastfeeding_events(raw_events)
 
             return {
                 "baby_events": baby_events,
@@ -251,13 +258,39 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
             ):
                 self._last_events[key] = event
 
-            # Accumulate every SLEEP_BEGIN seen so asleep_minutes can always be
-            # computed correctly even after the baby has fallen asleep again.
-            if int(event_type) == EventType.SLEEP_BEGIN:
-                event_id = event.get("event_id")
-                if event_id and event_id not in self._seen_sleep_begin_ids:
-                    self._seen_sleep_begin_ids.add(event_id)
-                    self._all_sleep_begin_events.append(event)
+            # SLEEP_BEGIN and MOTHERS_MILK events are now managed by
+            # _update_sleep_begin_events / _update_breastfeeding_events.
+
+    def _update_sleep_begin_events(self, raw_events: list) -> None:
+        """Update the sleep-begin dict from raw events (including deleted ones)."""
+        for event in raw_events:
+            if int(event.get("type", -1)) != EventType.SLEEP_BEGIN:
+                continue
+            event_id = event.get("event_id")
+            if not event_id:
+                continue
+            if event.get("deleted"):
+                self._sleep_begin_events.pop(event_id, None)
+            else:
+                self._sleep_begin_events[event_id] = event
+
+    def _update_breastfeeding_events(self, raw_events: list) -> None:
+        """Update the breastfeeding dict from raw events (including deleted ones).
+
+        Using raw (unfiltered) events means deletions and time edits made in the
+        Piyolog app are reflected immediately after the next sync.
+        """
+        for event in raw_events:
+            if int(event.get("type", -1)) != EventType.MOTHERS_MILK:
+                continue
+            event_id = event.get("event_id")
+            if not event_id:
+                continue
+            if event.get("deleted"):
+                self._breastfeeding_events.pop(event_id, None)
+                _LOGGER.debug("Breastfeeding event removed (deleted): %s", event_id)
+            else:
+                self._breastfeeding_events[event_id] = event
 
     def _parse_datetime_jst(self, datetime_str: Optional[str]) -> Optional[datetime]:
         """Parse PiyoLog "YYYYMMDD HH:mm" or ISO string to JST-aware datetime.
@@ -293,7 +326,7 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
     def build_event_attributes(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """Build HA-style attribute dict for a baby event (for sensors / events).
 
-        For SLEEP_END events, asleep_minutes is computed from self._all_sleep_begin_events.
+        For SLEEP_END events, asleep_minutes is computed from self._sleep_begin_events.
 
         Args:
             event: Baby event dict from PiyoLog API.
@@ -326,7 +359,7 @@ class PiyoLogCoordinator(DataUpdateCoordinator):
             wake_dt = self._parse_datetime_jst(event.get("datetime"))
             if wake_dt:
                 last_sleep_dt: Optional[datetime] = None
-                for e in self._all_sleep_begin_events:
+                for e in self._sleep_begin_events.values():
                     if str(e.get("baby_id")) != str(baby_id):
                         continue
                     dt = self._parse_datetime_jst(e.get("datetime"))
