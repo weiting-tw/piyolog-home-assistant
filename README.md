@@ -8,7 +8,9 @@
 
 - アカウントの作成と既存アカウントへのリンク
 - 排泄・睡眠・授乳などのぴよログイベントの登録
-- ぴよログへのイベント登録時のHome Assistantイベントトリガ
+- ぴよログへのイベント登録時のHome Assistantイベントトリガの発火
+- イベントの最終登録時刻を保持するセンサ
+- 本日の授乳の合計時間を保持するセンサ
 
 ## インストール
 
@@ -68,6 +70,8 @@
 | `memo`       | string  | 任意のメモ・コメント                           | `"ごきげん"`                         |
 
 ### サービス一覧
+
+注意：ぴよログで登録できる全てのイベントが実装されているわけではありません。
 
 #### `piyolog.add_pee`
 
@@ -298,6 +302,90 @@ logger:
 
 **設定 → システム → ログ** で確認してください（Home Assistantの再起動が必要な
 場合があります）。
+
+## センサの活用例
+
+各イベント種別（`const.py` の `EVENT_TYPE_NAMES` を参照）に対応したセンサが自動的に作成されます。センサIDは `sensor.piyolog_most_recent_<event_type>_<baby_name>` の形式です。
+
+**設定 → Developer Tools → States** の Filter Entities に、 `piyolog` と入力することで、センサの値と属性を確認することができます。
+
+### 最後のイベントからの経過時間を読み上げる
+
+```yaml
+alias: 最後のミルクを言う
+description: ""
+triggers: []
+conditions: []
+actions:
+  - variables:
+      event_type: milk
+      baby_name: hogehoge
+  - action: tts.speak
+    target:
+      entity_id: tts.google_translate_en_com
+    data:
+      media_player_entity_id: media_player.my_speaker
+      message: >
+        {% set sensor_id = 'sensor.piyolog_most_recent_' ~ event_type ~ '_' ~
+        baby_name %} {% set last_time = states(sensor_id) | as_datetime %}
+
+        {% if last_time %}
+          {% set delta = now() - last_time %}
+          {% set total_seconds = delta.total_seconds() | int %}
+          {% set hours = total_seconds // 3600 %}
+          {% set minutes = (total_seconds % 3600) // 60 %}
+          
+          {% if hours > 0 %}
+            {{ hours }}時間{{ minutes }}分前です。
+          {% else %}
+            {{ minutes }}分前です。
+          {% endif %}
+        {% else %}
+          そのイベントは登録されていません。
+        {% endif %}
+      language: ja
+mode: single
+```
+
+### 授乳の左右バランスを読み上げる
+
+Home Assistantで設定しているタイムゾーンにおける、その日に授乳した左右の時間を合計し、どちらが短いかをアナウンスします。左右のどちらから授乳するかの判断に役立ちます。
+
+センサIDは `sensor.piyolog_breastfeeding_today_<baby_name>` です。
+
+```yaml
+alias: 授乳の情報を言う
+description: ""
+triggers: []
+conditions: []
+actions:
+  - variables:
+      baby_name: hogehoge
+  - action: tts.speak
+    target:
+      entity_id: tts.google_translate_en_com
+    data:
+      media_player_entity_id: media_player.my_speaker
+      message: >
+        {% set sensor_id = 'sensor.piyolog_breastfeeding_today_' ~ baby_name %}
+        {% set left = state_attr(sensor_id, 'left_minutes') | int(0) %} {% set
+        right = state_attr(sensor_id, 'right_minutes') | int(0) %}
+
+        {% if right > left %}
+          {% set delta = right - left %}
+          左の方が{{ delta }}分、授乳時間が短いです。
+        {% elif left > right %}
+          {% set delta = left - right %}
+          右の方が{{ delta }}分、授乳時間が短いです。
+        {% else %}
+          どちらも同じ時間、授乳しています。
+        {% endif %}
+
+        {% set count = state_attr(sensor_id, 'session_count') | int(0) %}
+        授乳回数は{{ count }}回です。
+      language: ja
+mode: single
+```
 
 ## サポート
 
