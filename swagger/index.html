@@ -1,0 +1,215 @@
+<!-- HTML for static distribution bundle build -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>PiyoLog API - Swagger UI</title>
+    <link rel="stylesheet" type="text/css" href="./swagger-ui.css" />
+    <link rel="stylesheet" type="text/css" href="index.css" />
+    <link
+      rel="icon"
+      type="image/png"
+      href="./favicon-32x32.png"
+      sizes="32x32"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      href="./favicon-16x16.png"
+      sizes="16x16"
+    />
+    <style>
+      #credentials-panel {
+        background: #1b1b1b;
+        border-bottom: 1px solid #3b4151;
+        padding: 20px;
+        margin-bottom: 0;
+      }
+      #credentials-form {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 15px;
+        align-items: end;
+      }
+      .credential-field {
+        display: flex;
+        flex-direction: column;
+      }
+      .credential-field label {
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 5px;
+        font-family: sans-serif;
+      }
+      .credential-field input {
+        padding: 10px;
+        border: 2px solid #3b4151;
+        border-radius: 4px;
+        background: #41444e;
+        color: #fff;
+        font-size: 14px;
+        font-family: monospace;
+      }
+      .credential-field input:focus {
+        outline: none;
+        border-color: #4990e2;
+      }
+      #apply-credentials {
+        padding: 10px 20px;
+        background: #4990e2;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+        font-family: sans-serif;
+        height: fit-content;
+      }
+      #apply-credentials:hover {
+        background: #3a7bc8;
+      }
+      #credentials-status {
+        color: #49cc90;
+        font-size: 12px;
+        margin-top: 5px;
+        font-family: sans-serif;
+        min-height: 20px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="credentials-panel">
+      <div id="credentials-form">
+        <div class="credential-field">
+          <label for="user-id">User ID</label>
+          <input type="text" id="user-id" placeholder="Enter user_id" />
+        </div>
+        <div class="credential-field">
+          <label for="client-id">Client ID</label>
+          <input type="text" id="client-id" placeholder="Enter client_id" />
+        </div>
+        <div class="credential-field">
+          <label for="client-token">Client Token</label>
+          <input
+            type="password"
+            id="client-token"
+            placeholder="Enter client_token"
+          />
+        </div>
+        <button id="apply-credentials">Apply Credentials</button>
+      </div>
+      <div id="credentials-status"></div>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="./swagger-ui-bundle.js" charset="UTF-8"></script>
+    <script src="./swagger-ui-standalone-preset.js" charset="UTF-8"></script>
+    <script>
+      window.onload = function () {
+        // Load credentials from localStorage
+        const savedUserId = localStorage.getItem("piyolog_user_id") || "";
+        const savedClientId = localStorage.getItem("piyolog_client_id") || "";
+        const savedClientToken =
+          localStorage.getItem("piyolog_client_token") || "";
+
+        document.getElementById("user-id").value = savedUserId;
+        document.getElementById("client-id").value = savedClientId;
+        document.getElementById("client-token").value = savedClientToken;
+
+        // Function to get current credentials
+        function getCredentials() {
+          return {
+            userId: document.getElementById("user-id").value,
+            clientId: document.getElementById("client-id").value,
+            clientToken: document.getElementById("client-token").value,
+          };
+        }
+
+        // Apply credentials button handler
+        document
+          .getElementById("apply-credentials")
+          .addEventListener("click", function () {
+            const creds = getCredentials();
+            localStorage.setItem("piyolog_user_id", creds.userId);
+            localStorage.setItem("piyolog_client_id", creds.clientId);
+            localStorage.setItem("piyolog_client_token", creds.clientToken);
+
+            const status = document.getElementById("credentials-status");
+            status.textContent = "✓ Credentials applied and saved";
+            setTimeout(() => {
+              status.textContent = "";
+            }, 3000);
+          });
+
+        // Initialize Swagger UI
+        window.ui = SwaggerUIBundle({
+          url: "/swagger.yaml",
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+          layout: "StandaloneLayout",
+
+          // Request interceptor to add credentials and route through CORS proxy
+          requestInterceptor: function (request) {
+            const creds = getCredentials();
+
+            // Route API requests through local CORS proxy
+            if (request.url.includes("api2.piyolog.com")) {
+              request.url = request.url.replace(
+                "https://api2.piyolog.com",
+                "http://localhost:8081",
+              );
+              console.log("Routing through CORS proxy:", request.url);
+            }
+
+            // Don't add credentials to create user endpoint
+            if (request.url.includes("/users") && request.method === "POST") {
+              console.log("Skipping credentials for create user endpoint");
+              return request;
+            }
+
+            // Add credentials to request body for all other requests
+            if (creds.userId && creds.clientId && creds.clientToken) {
+              // Only add to requests with a body (POST, PUT, PATCH)
+              if (request.body) {
+                try {
+                  let body = {};
+
+                  // Parse existing body
+                  if (typeof request.body === "string") {
+                    body = JSON.parse(request.body);
+                  } else if (typeof request.body === "object") {
+                    body = request.body;
+                  }
+
+                  // Add credentials to body
+                  body.user_id = creds.userId;
+                  body.client_id = creds.clientId;
+                  body.client_token = creds.clientToken;
+
+                  // Update request body
+                  request.body = JSON.stringify(body);
+                  console.log(
+                    "Added credentials to request body:",
+                    request.url,
+                  );
+                } catch (e) {
+                  console.error("Error adding credentials to body:", e);
+                }
+              }
+            }
+
+            return request;
+          },
+        });
+      };
+    </script>
+  </body>
+</html>

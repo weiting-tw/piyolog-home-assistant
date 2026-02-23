@@ -1,8 +1,9 @@
-# ぴよログ Home Assistant 統合
+# ぴよログ Home Assistant 統合 + 非公式API仕様書
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 
 [ぴよログ](https://www.piyolog.com/) の Home Assistant 統合です。
+また、リバースエンジニアリングに基づいた非公式のAPI仕様書を `swagger` に保存しています。
 
 ## 機能
 
@@ -11,6 +12,21 @@
 - ぴよログへのイベント登録時のHome Assistantイベントトリガの発火
 - イベントの最終登録時刻を保持するセンサ
 - 本日の授乳の合計時間を保持するセンサ
+
+## API仕様書
+
+この統合を開発するにあたって解析したぴよログ非公式APIの仕様は `swagger/swagger.yaml` に記載されています。
+SwaggerUIを使って仕様書をブラウザで確認するには、以下のコマンドを実行してください。
+
+```bash
+docker compose -f swagger/compose.yml up
+```
+
+起動後、ブラウザで http://localhost を開くと仕様書を確認できます。
+
+ページ上部にクレデンシャルを入力するフォームがあります。そこに入力した内容が、各リクエストの `user_id`, `client_id`, `client_token` を置き換えます（Try it outで入力した内容を上書きするため、Try it outではクレデンシャルを入力する必要はありません）。
+
+**APIサーバに負荷をかけないよう、配慮した上で利用してください。**
 
 ## インストール
 

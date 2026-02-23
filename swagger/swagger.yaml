@@ -1,0 +1,1151 @@
+openapi: 3.1.0
+info:
+  title: ぴよログAPI
+  version: "6.0"
+  description: |
+    ぴよログAPI（v2.0）のリバースエンジニアリングに基づいた非公式の仕様書です。
+    実際のAPIは予告なく変更される可能性があります。
+    研究・教育目的での利用に限ります。
+
+servers:
+  - url: https://api2.piyolog.com
+    description: ぴよログAPIサーバ
+
+paths:
+  # ==================== User Management ====================
+  /create_user:
+    post:
+      summary: 新規デバイス/ユーザーの登録
+      operationId: createUser
+      tags: [ユーザ管理]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - api_version
+                - user_id
+                - name
+                - hash
+              properties:
+                api_version:
+                  type: number
+                  example: 2.0
+                user_id:
+                  type: string
+                  description: クライアントによって生成された UUID4
+                  example: 4ed161b5-0d3c-4f06-8381-5f14678e13da
+                name:
+                  type: string
+                  description: デバイス名
+                  example: "My Python Client"
+                hash:
+                  type: string
+                  description: "MD5(user_id + 'NewPiyoLogApp')"
+                  example: "c4ca4238a0b923820dcc509a6f75849b"
+      responses:
+        "200":
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/StatusResponse"
+                  - type: object
+                    properties:
+                      client_id:
+                        type: integer
+                        description: このクライアントの内部 ID
+                      client_token:
+                        type: string
+                        description: 今後のリクエストに使用する秘密トークン
+        "4XX":
+          description: エラー（HTTPステータスは200だがボディの `status` フィールドにエラーコード）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /client_list:
+    post:
+      summary: クライアント/デバイスのリスト取得
+      operationId: clientList
+      tags: [ユーザ管理]
+      description: 全てのクライアント/デバイスのリストを取得
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRequest"
+      responses:
+        "200":
+          description: クライアントのリスト
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/StatusResponse"
+                  - type: object
+                    properties:
+                      clients:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ClientInfo"
+        "4XX":
+          description: エラー（HTTPステータスは200だがボディの `status` フィールドにエラーコード）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /client_info:
+    post:
+      summary: クライアント情報の取得
+      operationId: clientInfo
+      tags: [ユーザ管理]
+      description: 特定のクライアントの詳細情報を取得
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRequest"
+      responses:
+        "200":
+          description: クライアント情報
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/StatusResponse"
+                  - type: object
+                    properties:
+                      client:
+                        $ref: "#/components/schemas/ClientInfo"
+        "4XX":
+          description: エラー（HTTPステータスは200だがボディの `status` フィールドにエラーコード）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /update_client:
+    post:
+      summary: クライアント情報の更新
+      operationId: updateClient
+      tags: [ユーザ管理]
+      description: |
+        クライアントの名前、ロール、ステータスを更新
+
+        **デバイス削除について:**
+        アプリの「アカウント削除」機能は実際にはこのエンドポイントを使用して
+        `status: "DELETED"` を設定することで、デバイスをアカウントから削除します。
+        アカウント全体（ぴよログID）は削除されません。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/AuthRequest"
+                - type: object
+                  required:
+                    - target_client
+                  properties:
+                    target_client:
+                      type: object
+                      required:
+                        - client_id
+                      properties:
+                        client_id:
+                          type: integer
+                          description: 更新対象のクライアントID
+                        name:
+                          type: string
+                          description: 新しいデバイス名
+                        role:
+                          $ref: "#/components/schemas/RoleType"
+                        status:
+                          $ref: "#/components/schemas/ClientStatus"
+                          example: "ACTIVE"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "4XX":
+          description: エラー（HTTPステータスは200だがボディの `status` フィールドにエラーコード）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ==================== Data Synchronization ====================
+  /sync:
+    post:
+      summary: データの同期（アップロード/ダウンロード）
+      operationId: sync
+      tags: [データ関連]
+      description: |
+        データの読み書きを行う主要なエンドポイント。
+
+        - **アップロード**: 全データを送信する必要はなく、変更された項目のみ送信
+        - **ダウンロード**: サーバは全データを返さず、前回同期以降の変更のみ返す
+        - 初回同期（`main_version=1, minor_version=1`）時に全データを受信
+
+        ## アップロード（Client → Server）
+        - クライアントは新規のデータを `minor_version = 0` として送信
+        - 変更されていない既存データは送信不要
+        - `data` オブジェクトに新規/更新したレコードのみ含める
+        - サーバは各項目に新しい `minor_version` を割り当てる
+
+        ## ダウンロード（Server → Client）
+        - クライアントは前回同期時に受け取った `main_version` と `minor_version` を送信
+        - サーバはクライアントのバージョンより**新しい項目のみ**を返す
+        - `main_version=1, minor_version=1` の場合は全データを返す（初回同期時）
+        - クライアントは受信データをローカルにマージ（全置き換えではない）
+
+        ## バージョン管理の仕組み
+
+        **2種類の `minor_version` があることに注意:**
+
+        1. **リクエストのトップレベル**（クライアント全体の状態）
+           - クライアントが「どこまで同期済みか」を示す
+           - 前回の同期レスポンスから受け取った値をそのまま送信
+           - 例: `{"main_version": 1, "minor_version": 42, "data": {...}}`
+
+        2. **個々のデータアイテム内**（アイテムごとの状態）
+           - 各アイテムが「同期済みか未同期か」を示す
+           - 変更されたアイテムは `0` に設定される
+           - 例: `{"event_id": "abc", "minor_version": 0, ...}`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - api_version
+                - user_id
+                - client_id
+                - client_token
+                - app
+              properties:
+                api_version:
+                  type: number
+                  example: 2.0
+                user_id:
+                  type: string
+                  example: "YOUR_PIYOLOG_ID"
+                client_id:
+                  type: integer
+                  example: 1
+                client_token:
+                  type: string
+                  example: "YOUR_CLIENT_TOKEN"
+                main_version:
+                  type: integer
+                  default: 1
+                  description: |
+                    前回同期時にサーバーから受け取った `main_version`。
+                    クライアントはこの値を保存しておく。
+                    - 1 = 初期値、全データダウンロード
+                    - >1 = このバージョンより新しいデータのみダウンロード（通常は利用されない）
+                  example: 1
+                minor_version:
+                  type: integer
+                  default: 1
+                  description: |
+                    前回同期時にサーバーから受け取った `minor_version`。
+                    クライアントはこの値を保存しておく。
+                    サーバはこの値より大きい `minor_version` を持つ項目のみ返す。
+                  example: 1
+                app:
+                  type: string
+                  description: |
+                    アプリケーション名（必須フィールド）
+                  example: "PiyoLog for android"
+                data:
+                  type: object
+                  description: |
+                    アップロードする新規/更新レコードのコンテナ。
+                    `minor_version=0` の項目のみを含める。
+                  properties:
+                    baby:
+                      type: array
+                      description: 更新された赤ちゃんプロフィール
+                      items:
+                        $ref: "#/components/schemas/Baby"
+                    baby_event:
+                      type: array
+                      description: 新規/更新された赤ちゃんイベント
+                      items:
+                        $ref: "#/components/schemas/BabyEvent"
+                    day_log:
+                      type: array
+                      description: 新規/更新された日次ログ
+                      items:
+                        $ref: "#/components/schemas/DayLog"
+                    food_record:
+                      type: array
+                      description: 新規/更新された食事記録
+                      items:
+                        $ref: "#/components/schemas/FoodRecord"
+                    calendar_event:
+                      type: array
+                      description: 新規/更新されたカレンダーイベント
+                      items:
+                        $ref: "#/components/schemas/CalendarEvent"
+                    custom_event_info:
+                      type: object
+                      description: カスタムイベント設定（更新されている場合）
+                    purchase_info:
+                      type: object
+                      description: 購入情報（更新されている場合）
+      responses:
+        "200":
+          description: 同期成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncResponse"
+        "4XX":
+          description: エラー（HTTPステータスは200だがボディの `status` フィールドにエラーコード）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /force_sync_to_app:
+    post:
+      summary: 強制ダウンロード（ローカル上書き）
+      operationId: forceSyncToApp
+      tags: [データ関連]
+      description: サーバの状態のダウンロードを明示的に強制し、ローカルデータを上書きすることを意図
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthRequest"
+      responses:
+        "200":
+          description: 全データダンプを返します
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncResponse"
+        "4XX":
+          description: エラー（HTTPステータスは200だがボディの `status` フィールドにエラーコード）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /get_baby_event_extra:
+    post:
+      summary: イベントの拡張データを取得
+      operationId: getBabyEventExtra
+      tags: [データ関連]
+      description: |
+        特定のイベントの変更履歴を取得。
+        イベントがどのクライアント（デバイス）でいつ作成・変更されたかの履歴を表示する。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/AuthRequest"
+                - type: object
+                  required:
+                    - event_id
+                  properties:
+                    event_id:
+                      type: string
+                      description: イベントID
+      responses:
+        "200":
+          description: イベント拡張データ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: integer
+                    example: 200
+                  data:
+                    type: object
+                    properties:
+                      baby_event_extra:
+                        type: array
+                        description: イベントの変更履歴（どのクライアントがいつ変更したか）
+                        items:
+                          $ref: "#/components/schemas/BabyEventExtra"
+                  server_version:
+                    type: integer
+                    description: サーババージョン
+                    example: 29
+        "4XX":
+          description: エラー（HTTPステータスは200だがボディの `status` フィールドにエラーコード）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ==================== Share Code / Account Linking ====================
+  /share_code_create:
+    post:
+      summary: 共有コードの作成
+      operationId: shareCodeCreate
+      tags: [アカウント共有]
+      description: アカウント共有用の共有コードを生成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/AuthRequest"
+                - type: object
+                  required:
+                    - type
+                  properties:
+                    role:
+                      $ref: "#/components/schemas/RoleType"
+                    type:
+                      type: integer
+                      description: "1 = 共有（デバイス追加）, 0 = 引き継ぎ（移行）"
+                      example: 1
+      responses:
+        "200":
+          description: 共有コードを返します
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/StatusResponse"
+                  - type: object
+                    properties:
+                      code:
+                        type: string
+                        description: 生成された共有コード
+        "4XX":
+          description: エラー（HTTPステータスは200だがボディの `status` フィールドにエラーコード）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /share_code_confirm:
+    post:
+      summary: 共有コードを使用した既存アカウントへのリンク
+      operationId: shareCodeConfirm
+      tags: [アカウント共有]
+      description: モバイルアプリからの共有コードを、共有アカウントへの有効な認証情報と交換
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - api_version
+                - user_id
+                - code
+                - name
+                - type
+              properties:
+                api_version:
+                  type: number
+                  example: 2.0
+                user_id:
+                  type: string
+                  description: リンク先のユーザー ID
+                  example: "OTHER_USER_ID"
+                code:
+                  type: string
+                  description: アプリからの共有コード（設定 -> 共有）
+                  example: "1678"
+                name:
+                  type: string
+                  description: デバイス名
+                  example: "My Device"
+                type:
+                  type: integer
+                  description: "1 = 共有（デバイス追加）, 0 = 引き継ぎ（移行）"
+                  example: 1
+      responses:
+        "200":
+          description: リンク成功。共有アカウントの新しい認証情報を返します
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/StatusResponse"
+                  - type: object
+                    properties:
+                      user_id:
+                        type: string
+                        description: 共有アカウントの UUID。設定をこれに更新してください
+                      client_id:
+                        type: integer
+                        description: 共有アカウントでのこのデバイスの新しいクライアント ID
+                      client_token:
+                        type: string
+                        description: 共有アカウントの新しいクライアントトークン
+                      role:
+                        $ref: "#/components/schemas/RoleType"
+        "4XX":
+          description: エラー（HTTPステータスは200だがボディの `status` フィールドにエラーコード）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+# ==================== Components ====================
+components:
+  schemas:
+    AuthRequest:
+      type: object
+      description: |
+        標準的な認証リクエスト
+      required:
+        - api_version
+        - user_id
+        - client_id
+        - client_token
+      properties:
+        api_version:
+          type: number
+          default: 2.0
+          description: API バージョン（固定値）
+        user_id:
+          type: string
+          example: "YOUR_PIYOLOG_ID"
+          description: ぴよログID（ユーザID）
+        client_id:
+          type: integer
+          example: 1
+          descritption: クライアントID（デバイスID）
+        client_token:
+          type: string
+          example: "YOUR_CLIENT_TOKEN"
+          description: クライアントトークン
+
+    StatusResponse:
+      type: object
+      description: |
+        標準的なステータスレスポンス
+      properties:
+        status:
+          type: integer
+          example: 200
+          description: レスポンスステータスコード
+
+    ErrorResponse:
+      type: object
+      description: |
+        エラーレスポンス。HTTPステータスは常に200だが、ボディ内の `status` フィールドにエラーコードが入る。
+
+        | status | `message` の例 | 説明 |
+        |--------|----------------|------|
+        | 400    | "auth error", "invalid endpoint", "db connection error" 等 | 一般的なエラー。詳細は `message` フィールドを参照 |
+        | 401    | `message` フィールドなし | バージョン不一致のため再同期が必要。レスポンスに `user_id`, `main_version`, `minor_version` が含まれるので、それらを使って同期する |
+        | 402    | "no user info" | ユーザー情報が存在しない（赤ちゃんデータ未登録の新規アカウントなど） |
+        | 404    | "hash error" | ハッシュ値が不正（`/create_user` の `hash` フィールド） |
+        | 405    | "client is not admin" | 管理者権限が必要な操作を非管理者クライアントが実行しようとした |
+      properties:
+        status:
+          type: integer
+          description: エラーコード
+          examples:
+            - 400
+            - 401
+            - 402
+            - 404
+            - 405
+        message:
+          type: string
+          description: エラーの詳細メッセージ
+          examples:
+            - "auth error"
+            - "invalid endpoint"
+            - "db connection error"
+            - "hash error"
+            - "client is not admin"
+        server_version:
+          type: integer
+          description: サーバソフトウェアバージョン
+          example: 29
+
+    ClientInfo:
+      type: object
+      description: |
+        クライアント/デバイス情報
+      properties:
+        client_id:
+          type: integer
+          description: クライアントID
+        name:
+          type: string
+          description: デバイス名
+        role:
+          $ref: "#/components/schemas/RoleType"
+        status:
+          $ref: "#/components/schemas/ClientStatus"
+
+    BabyEventExtra:
+      type: object
+      description: |
+        イベント変更履歴の詳細情報
+      properties:
+        client_support_name:
+          type: string
+          description: クライアント識別子
+          example: "XCPA"
+        app:
+          type: string
+          description: アプリ名
+          examples:
+            - "PiyoLog for iPhone"
+            - "PiyoLog for android"
+        user_id:
+          type: string
+        action:
+          type: integer
+          description: アクション種別（0 = 作成/更新）
+          example: 0
+        baby_id:
+          type: string
+        client_id:
+          type: integer
+        timestamp:
+          type: integer
+          format: int64
+          description: 変更日時（ミリ秒）
+        event_id:
+          type: string
+        expiration_date:
+          type: integer
+          format: int64
+          description: 有効期限（UNIX timestamp）
+        client_name:
+          type: string
+          description: デバイス名
+          examples:
+            - "iPhone"
+            - "パパ"
+        snapshot:
+          type: string
+          description: イベントデータのJSONスナップショット
+        event_id+timestamp:
+          type: string
+          description: 複合キー（event_id-timestamp）
+
+    SyncResponse:
+      type: object
+      description: |
+        同期レスポンス。サーバはクライアントが送信した `main_version` / `minor_version` より
+        新しいデータのみを返す。
+      properties:
+        status:
+          type: integer
+          example: 200
+        user_id:
+          type: string
+          description: ユーザーID（ぴよログID）
+          example: "YOUR_PIYOLOG_ID"
+        main_version:
+          type: integer
+          description: |
+            サーバの最新メインバージョン（クライアントはこれを保存し、再利用することが推奨されます）
+
+            通常は 1 で固定。次回同期時にこの値を送信すること。
+          example: 1
+        minor_version:
+          type: integer
+          description: |
+            サーバの最新マイナーバージョン（クライアントはこれを保存し、再利用することが推奨されます）
+
+            各変更でインクリメントされる。次回同期時にこの値を送信すると
+            差分のみ取得できる。
+          example: 1832
+        server_version:
+          type: integer
+          description: サーバソフトウェアバージョン
+          example: 29
+        data:
+          type: object
+          description: |
+            クライアントのバージョンより新しいデータのみを含む。
+            - リクエストの `main_version=1, minor_version=1` の場合: 全データ
+            - それ以外: `minor_version` がクライアント値より大きい項目のみ
+          properties:
+            baby:
+              type: array
+              description: 更新された赤ちゃんプロフィール
+              items:
+                $ref: "#/components/schemas/Baby"
+            baby_event:
+              type: array
+              description: 新規/更新された赤ちゃんイベント
+              items:
+                $ref: "#/components/schemas/BabyEvent"
+            calendar_event:
+              type: array
+              description: 新規/更新されたカレンダーイベント
+              items:
+                $ref: "#/components/schemas/CalendarEvent"
+            day_log:
+              type: array
+              description: 新規/更新された日次ログ
+              items:
+                $ref: "#/components/schemas/DayLog"
+            food_record:
+              type: array
+              description: 新規/更新された食事記録
+              items:
+                $ref: "#/components/schemas/FoodRecord"
+            custom_event_info:
+              type: object
+              description: カスタムイベント設定（更新されている場合）
+            purchase_info:
+              type: object
+              description: 購入情報（更新されている場合）
+
+    Baby:
+      type: object
+      description: 赤ちゃん情報
+      properties:
+        user_id:
+          type: string
+          description: ユーザーID
+          example: "USER_ID_EXAMPLE"
+        baby_id:
+          type: string
+          description: 赤ちゃんID
+          example: "BABY_ID_EXAMPLE"
+        nickname:
+          type: string
+          description: ニックネーム
+          example: "ベビちゃん"
+        birthday:
+          type: integer
+          description: 誕生日（YYYYMMDD）
+          example: 20260101
+        sex:
+          type: integer
+          description: 性別（0=男の子, 1=女の子, 2=選択なし）
+          example: 1
+        created_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒） - 作成日時
+          example: 1754176087395
+        modified_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒） - 更新日時
+          example: 1767419429351
+        deleted:
+          type: boolean
+          description: 削除フラグ
+          example: false
+        main_version:
+          type: integer
+          description: メインバージョン
+          example: 1
+        minor_version:
+          type: integer
+          description: マイナーバージョン
+          example: 10
+        due_date:
+          type: integer
+          description: 出産予定日（YYYYMMDD）
+          example: 20251123
+        meta:
+          type: string
+          description: メタデータ
+          example: ""
+
+    CalendarEvent:
+      type: object
+      description: カレンダーイベント（予定など）
+      properties:
+        user_id:
+          type: string
+          description: ユーザーID
+          example: "USER_ID_EXAMPLE"
+        baby_id:
+          type: string
+          description: 赤ちゃんID
+          example: "BABY_ID_EXAMPLE"
+        event_id:
+          type: string
+          description: イベントID
+          example: "EVENT_ID_EXAMPLE"
+        title:
+          type: string
+          description: タイトル
+          example: "予防接種"
+        date:
+          type: integer
+          description: 日付（YYYYMMDD）
+          example: 20260115
+        created_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒）
+          example: 1767419429351
+        modified_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒）
+          example: 1767419429351
+        deleted:
+          type: boolean
+          description: 削除フラグ
+          example: false
+        main_version:
+          type: integer
+          example: 1
+        minor_version:
+          type: integer
+          example: 1
+
+    DayLog:
+      type: object
+      description: 日記（1日の記録）
+      properties:
+        user_id:
+          type: string
+          description: ユーザーID
+          example: "USER_ID_EXAMPLE"
+        baby_id:
+          type: string
+          description: 赤ちゃんID
+          example: "BABY_ID_EXAMPLE"
+        date:
+          type: integer
+          description: 日付（YYYYMMDD）
+          example: 20260105
+        diary:
+          type: string
+          description: 日記本文
+          example: "今日は初めて寝返りをしました"
+        image_url:
+          type: string
+          description: 画像URL
+          example: ""
+        created_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒）
+          example: 1767419429351
+        modified_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒）
+          example: 1767419429351
+        deleted:
+          type: boolean
+          description: 削除フラグ
+          example: false
+        main_version:
+          type: integer
+          example: 1
+        minor_version:
+          type: integer
+          example: 1
+
+    FoodRecord:
+      type: object
+      description: 離乳食記録
+      properties:
+        user_id:
+          type: string
+          description: ユーザーID
+          example: "USER_ID_EXAMPLE"
+        baby_id:
+          type: string
+          description: 赤ちゃんID
+          example: "BABY_ID_EXAMPLE"
+        food_id:
+          type: integer
+          description: 食材ID
+          example: 1
+        date:
+          type: integer
+          description: 日付（YYYYMMDD）
+          example: 20260105
+        status:
+          type: integer
+          description: ステータス（0=未実施, 1=OK, 2=アレルギー反応など）
+          example: 1
+        memo:
+          type: string
+          description: メモ
+          example: ""
+        meta:
+          type: string
+          description: メタデータ
+          example: ""
+        created_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒）
+          example: 1767419429351
+        modified_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒）
+          example: 1767419429351
+        main_version:
+          type: integer
+          example: 1
+        minor_version:
+          type: integer
+          example: 1
+
+    # ==================== 定数定義 ====================
+    EventType:
+      type: integer
+      description: |
+        イベントタイプ定数
+
+        - `0`: その他 / Others
+        - `1`: 母乳 / Breastfeeding
+        - `2`: ミルク / Formula
+        - `3`: 搾母乳 / EBM
+        - `4`: 寝る / Sleep
+        - `5`: 起きる / Wake-up
+        - `6`: おしっこ / Pee
+        - `7`: うんち / Poop
+        - `8`: 体温 / Body Temperature
+        - `9`: 離乳食 / Solid food
+        - `10`: 身長 / Height
+        - `11`: 体重 / Weight
+        - `12`: せき / Cough
+        - `13`: 嘔吐 / Vomit
+        - `14`: 発疹 / Rash
+        - `15`: けが / Injury
+        - `16`: お風呂 / Baths
+        - `17`: おやつ / Snack
+        - `18`: 食事 / Meal
+        - `19`: 水分 / Drink
+        - `20`: 薬 / Medicine
+        - `21`: 病院 / Hospital
+        - `22`: 散歩 / Walks
+        - `23`: 搾乳 / Pumping
+        - `24`: カスタム1 / Custom1
+        - `25`: カスタム2 / Custom2
+        - `26`: カスタム3 / Custom3
+        - `27`: カスタム4 / Custom4
+        - `28`: カスタム5 / Custom5
+        - `29`: 予防接種 / Vaccine
+        - `30`: カスタム6 / Custom6
+        - `31`: カスタム7 / Custom7
+        - `32`: カスタム8 / Custom8
+        - `33`: カスタム9 / Custom9
+        - `34`: カスタム10 / Custom10
+        - `35`: できた / Milestone
+        - `36`: 頭囲 / Head
+        - `37`: 胸囲 / Chest
+        - `38`: メモ / Note
+      enum:
+        - 0 # OTHER
+        - 1 # MOTHERS_MILK
+        - 2 # MILK
+        - 3 # MILKING
+        - 4 # SLEEP_BEGIN
+        - 5 # SLEEP_END
+        - 6 # PEE
+        - 7 # POO
+        - 8 # BODY_TEMPERATURE
+        - 9 # MEAL
+        - 10 # BODY_HEIGHT
+        - 11 # BODY_WEIGHT
+        - 12 # COUGH
+        - 13 # VOMITING
+        - 14 # RASH
+        - 15 # INJURY
+        - 16 # BATH
+        - 17 # SNACK
+        - 18 # MEAL2
+        - 19 # DRINK
+        - 20 # MEDICINE
+        - 21 # HOSPITAL
+        - 22 # WALKING
+        - 23 # PUMPING
+        - 24 # CUSTOM1
+        - 25 # CUSTOM2
+        - 26 # CUSTOM3
+        - 27 # CUSTOM4
+        - 28 # CUSTOM5
+        - 29 # VACCINE
+        - 30 # CUSTOM6
+        - 31 # CUSTOM7
+        - 32 # CUSTOM8
+        - 33 # CUSTOM9
+        - 34 # CUSTOM10
+        - 35 # MILESTONE
+        - 36 # HEAD
+        - 37 # CHEST
+        - 38 # MEMO
+
+    RoleType:
+      type: integer
+      description: |
+        ユーザーロール定数
+
+        - `0`: 管理者 / ADMIN
+        - `1`: ユーザー / USER
+        - `2`: サポーター / SUPPORTER
+      enum:
+        - 0 # ADMIN
+        - 1 # USER
+        - 2 # SUPPORTER
+
+    ClientStatus:
+      type: integer
+      description: |
+        クライアント/デバイスステータス定数
+
+        - `0`: アクティブ / ACTIVE
+        - `1`: 一時停止 / SUSPEND
+        - `2`: 削除済み / DELETED
+      enum:
+        - 0 # ACTIVE
+        - 1 # SUSPEND
+        - 2 # DELETED
+
+    BabyEvent:
+      type: object
+      description: 赤ちゃんイベント（授乳、睡眠、おむつ替えなど）
+      properties:
+        user_id:
+          type: string
+          description: ユーザーID（ぴよログID）
+          example: "USER_ID_EXAMPLE"
+        baby_id:
+          type: string
+          description: 赤ちゃんID
+          example: "BABY_ID_EXAMPLE"
+        event_id:
+          type: string
+          description: イベントID（MD5ハッシュ）
+          example: "abc123def456"
+        type:
+          $ref: "#/components/schemas/EventType"
+        date:
+          type: integer
+          description: YYYYMMDD
+          example: 20260103
+        time:
+          type: string
+          description: HH:mm
+          example: "14:30"
+        datetime:
+          type: string
+          description: "YYYYMMDD HH:mm"
+          example: "20260103 14:30"
+        datetime2:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒） - イベント日時
+          example: 1767405600000
+        memo:
+          type: string
+          description: メモ
+          example: ""
+        left_time:
+          type: integer
+          description: |
+            左側の授乳時間（秒） / うんちの色（イベントタイプにより異なる）
+
+            **母乳（type=1）の場合:**
+            - 左側の授乳時間（秒）
+
+            **うんち（type=7）の場合 - 色:**
+            - `0`: 記録しない / Not recorded
+            - `1`: 白 / White
+            - `2`: 黄 / Yellow
+            - `3`: 橙 / Orange
+            - `4`: 茶 / Brown
+            - `5`: 緑 / Green
+            - `6`: 赤 / Red
+            - `7`: 黒 / Black
+          example: 300
+        right_time:
+          type: integer
+          description: 右側の授乳時間（秒）
+          example: 300
+        amount:
+          type: number
+          description: |
+            量（イベントタイプにより異なる）
+
+            **母乳（type=1）、ミルク（type=2）、搾母乳（type=3）、搾乳（type=23）の場合:**
+            - ミルク・母乳の量（ml）
+            - 母乳の場合、量の記録は任意
+
+            **うんち（type=7）の場合:**
+            - `0`: 記録しない / Not recorded
+            - `1`: 少なめ / Small
+            - `2`: 多め / Large
+            - `3`: ふつう / Medium
+            - `4`: ちょこっと / Bit
+          example: 50
+        value:
+          type: number
+          description: |
+            値（イベントタイプにより異なる）
+
+            **体温（type=8）の場合:**
+            - 体温（℃）
+
+            **身長（type=10）の場合:**
+            - 身長（cm）
+
+            **体重（type=11）の場合:**
+            - 体重（kg）
+
+            **母乳（type=1）の場合 - 授乳の順番:**
+            - `0`: 順序なし / No order
+            - `1`: 左から / L to R
+            - `2`: 右から / R to L
+
+            **うんち（type=7）の場合 - 硬さ:**
+            - `0`: 記録しない / Not recorded
+            - `1`: 下痢 / Diarrhea
+            - `2`: やわらかめ / Soft
+            - `3`: かため / Hard
+            - `4`: ふつう / Medium
+          example: 36.5
+        image_url:
+          type: string
+          description: 画像URL
+          example: ""
+        created_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒） - 作成日時
+          example: 1767410066444
+        modified_at:
+          type: integer
+          description: Unix タイムスタンプ（ミリ秒） - 更新日時
+          example: 1767410066444
+        deleted:
+          type: boolean
+          description: 削除フラグ
+          example: false
+        main_version:
+          type: integer
+          description: メインバージョン
+          example: 1
+        minor_version:
+          type: integer
+          description: マイナーバージョン
+          example: 4
+        meta:
+          type: string
+          nullable: true
+          description: メタデータ（JSONまたはnull）
+          example: null

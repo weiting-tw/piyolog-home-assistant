@@ -9,3 +9,6 @@
 !custom_components/**/
 !custom_components/**/*.json
 !custom_components/**/*.yaml
+
+!swagger/
+!swagger/*
