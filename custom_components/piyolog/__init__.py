@@ -50,6 +50,7 @@ from .const import (
     ATTR_BREASTFEEDING_ORDER,
     ATTR_EVENT_TYPE,
     ATTR_MAX_AGE_MINUTES,
+    ATTR_SYNC_BEFORE_CHECK,
     POOP_AMOUNT_MAP,
     POOP_HARDNESS_MAP,
     POOP_COLOR_MAP,
@@ -86,6 +87,7 @@ SERVICE_DELETE_MOST_RECENT_SCHEMA = vol.Schema(
         vol.Optional(
             ATTR_MAX_AGE_MINUTES, default=DEFAULT_DELETE_MAX_AGE_MINUTES
         ): vol.All(vol.Coerce(int), vol.Range(min=1, max=MAX_DELETE_MAX_AGE_MINUTES)),
+        vol.Optional(ATTR_SYNC_BEFORE_CHECK, default=True): cv.boolean,
     }
 )
 
@@ -501,10 +503,15 @@ async def _async_register_services(hass: HomeAssistant, client: PiyoLogClient):
         )
         max_age_seconds = call.data[ATTR_MAX_AGE_MINUTES] * 60
 
+        sync_before_check = call.data[ATTR_SYNC_BEFORE_CHECK]
+
         entry_id = next(iter(hass.data[DOMAIN]), None)
         if not entry_id:
             raise ServiceValidationError("PiyoLog integration not loaded")
         coordinator = hass.data[DOMAIN][entry_id]["coordinator"]
+
+        if sync_before_check:
+            await coordinator.async_request_refresh()
 
         target_baby_id = None
         if baby_id is not None or baby_index is not None:

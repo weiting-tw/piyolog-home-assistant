@@ -484,6 +484,15 @@ delete_most_recent_event:
           min: 1
           max: 180
           unit_of_measurement: min
+    sync_before_check:
+      name: Sync Before Check
+      description: >-
+        Fetch the latest data from PiyoLog before searching for the most recent
+        event. Ensures events registered by other devices are visible. Disable
+        if you want to avoid the extra network round-trip.
+      default: true
+      selector:
+        boolean:
     baby_id:
       name: Baby ID
       description: Restrict to events for this baby (optional).
