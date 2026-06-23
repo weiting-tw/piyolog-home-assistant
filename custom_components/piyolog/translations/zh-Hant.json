@@ -1,0 +1,179 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "設定 PiyoLog",
+        "description": "選擇 PiyoLog 的認證方式",
+        "data": {
+          "auth_method": "認證方式"
+        },
+        "data_description": {
+          "auth_method": "建立新帳號並連結，或使用現有認證資訊"
+        },
+        "options": {
+          "auth_method": {
+            "create_new": "建立新帳號並連結到現有帳號",
+            "use_existing": "使用現有認證資訊"
+          }
+        }
+      },
+      "create": {
+        "title": "建立新帳號",
+        "description": "建立新的 PiyoLog 裝置。這將產生認證資訊，用於連結到您的現有帳號。",
+        "data": {
+          "device_name": "裝置名稱"
+        }
+      },
+      "existing": {
+        "title": "使用現有認證資訊",
+        "description": "輸入您現有的 PiyoLog 認證資訊。可以在 PiyoLog App 設定或之前的設定中找到。",
+        "data": {
+          "user_id": "使用者 ID",
+          "client_id": "客戶端 ID",
+          "client_token": "客戶端 Token"
+        }
+      },
+      "link": {
+        "title": "連結到現有帳號",
+        "description": "輸入 PiyoLog 的使用者 ID 和共享代碼。取得方式：\n1. 開啟 PiyoLog App\n2. 設定 → 帳號 → 「發行共享代碼」\n3. 點擊「取得共享代碼」\n4. 將顯示的 PiyoLog ID 和共享代碼輸入下方",
+        "data": {
+          "other_user_id": "使用者 ID",
+          "share_code": "共享代碼"
+        }
+      },
+      "select_baby": {
+        "title": "選擇預設寶寶",
+        "description": "選擇作為事件預設使用的寶寶",
+        "data": {
+          "baby_index": "寶寶"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "連線到 PiyoLog API 失敗",
+      "invalid_auth": "認證資訊或共享代碼無效",
+      "unknown": "發生未預期的錯誤"
+    },
+    "abort": {
+      "already_configured": "此帳號已設定完成"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "PiyoLog 選項",
+        "description": "設定 PiyoLog 整合選項",
+        "data": {
+          "sync_interval": "同步間隔（秒）"
+        }
+      }
+    }
+  },
+  "services": {
+    "add_pee": {
+      "name": "記錄尿尿",
+      "description": "向 PiyoLog 註冊尿尿事件",
+      "fields": {
+        "baby_id": { "name": "寶寶 ID", "description": "寶寶 ID（選擇性，未指定則使用預設）" },
+        "baby_index": { "name": "寶寶編號", "description": "寶寶索引（從 0 開始，選擇性）" },
+        "datetime": { "name": "日期時間", "description": "事件日期時間（選擇性，預設為現在）" },
+        "memo": { "name": "備註", "description": "選擇性備註" }
+      }
+    },
+    "add_poo": {
+      "name": "記錄便便",
+      "description": "向 PiyoLog 註冊便便事件",
+      "fields": {
+        "poo_amount": { "name": "份量", "description": "便便份量（選擇性）" },
+        "poo_hardness": { "name": "軟硬度", "description": "便便軟硬度（選擇性）" },
+        "poo_color": { "name": "顏色", "description": "便便顏色（選擇性）" },
+        "baby_id": { "name": "寶寶 ID", "description": "寶寶 ID（選擇性，未指定則使用預設）" },
+        "baby_index": { "name": "寶寶編號", "description": "寶寶索引（從 0 開始，選擇性）" },
+        "datetime": { "name": "日期時間", "description": "事件日期時間（選擇性，預設為現在）" },
+        "memo": { "name": "備註", "description": "選擇性備註" }
+      }
+    },
+    "add_sleep": {
+      "name": "記錄入睡",
+      "description": "向 PiyoLog 註冊入睡事件",
+      "fields": {
+        "baby_id": { "name": "寶寶 ID", "description": "寶寶 ID（選擇性，未指定則使用預設）" },
+        "baby_index": { "name": "寶寶編號", "description": "寶寶索引（從 0 開始，選擇性）" },
+        "datetime": { "name": "日期時間", "description": "事件日期時間（選擇性，預設為現在）" },
+        "memo": { "name": "備註", "description": "選擇性備註" }
+      }
+    },
+    "add_wake_up": {
+      "name": "記錄起床",
+      "description": "向 PiyoLog 註冊起床事件",
+      "fields": {
+        "baby_id": { "name": "寶寶 ID", "description": "寶寶 ID（選擇性，未指定則使用預設）" },
+        "baby_index": { "name": "寶寶編號", "description": "寶寶索引（從 0 開始，選擇性）" },
+        "datetime": { "name": "日期時間", "description": "事件日期時間（選擇性，預設為現在）" },
+        "memo": { "name": "備註", "description": "選擇性備註" }
+      }
+    },
+    "add_pee_and_poo": {
+      "name": "記錄尿尿和便便",
+      "description": "向 PiyoLog 同時註冊尿尿和便便事件",
+      "fields": {
+        "poo_amount": { "name": "便便份量", "description": "便便份量（選擇性）" },
+        "poo_hardness": { "name": "便便軟硬度", "description": "便便軟硬度（選擇性）" },
+        "poo_color": { "name": "便便顏色", "description": "便便顏色（選擇性）" },
+        "baby_id": { "name": "寶寶 ID", "description": "寶寶 ID（選擇性，未指定則使用預設）" },
+        "baby_index": { "name": "寶寶編號", "description": "寶寶索引（從 0 開始，選擇性）" },
+        "datetime": { "name": "日期時間", "description": "事件日期時間（選擇性，預設為現在）" },
+        "memo": { "name": "備註", "description": "選擇性備註" }
+      }
+    },
+    "add_milk": {
+      "name": "記錄喝奶",
+      "description": "向 PiyoLog 註冊喝奶事件",
+      "fields": {
+        "amount": { "name": "份量（ml）", "description": "奶量（毫升）" },
+        "baby_id": { "name": "寶寶 ID", "description": "寶寶 ID（選擇性，未指定則使用預設）" },
+        "baby_index": { "name": "寶寶編號", "description": "寶寶索引（從 0 開始，選擇性）" },
+        "datetime": { "name": "日期時間", "description": "事件日期時間（選擇性，預設為現在）" },
+        "memo": { "name": "備註", "description": "選擇性備註" }
+      }
+    },
+    "add_breastfeeding": {
+      "name": "記錄母乳",
+      "description": "向 PiyoLog 註冊母乳事件",
+      "fields": {
+        "breastfeeding_left_minutes": { "name": "左側（分鐘）", "description": "左側哺乳時間（分鐘）" },
+        "breastfeeding_right_minutes": { "name": "右側（分鐘）", "description": "右側哺乳時間（分鐘）" },
+        "breastfeeding_order": { "name": "哺乳順序", "description": "先哺哪一側（選擇性）" },
+        "amount": { "name": "份量（ml）", "description": "母乳量（選擇性）" },
+        "baby_id": { "name": "寶寶 ID", "description": "寶寶 ID（選擇性，未指定則使用預設）" },
+        "baby_index": { "name": "寶寶編號", "description": "寶寶索引（從 0 開始，選擇性）" },
+        "datetime": { "name": "日期時間", "description": "事件日期時間（選擇性，預設為現在）" },
+        "memo": { "name": "備註", "description": "選擇性備註" }
+      }
+    },
+    "add_bath": {
+      "name": "記錄洗澡",
+      "description": "向 PiyoLog 註冊洗澡事件",
+      "fields": {
+        "baby_id": { "name": "寶寶 ID", "description": "寶寶 ID（選擇性，未指定則使用預設）" },
+        "baby_index": { "name": "寶寶編號", "description": "寶寶索引（從 0 開始，選擇性）" },
+        "datetime": { "name": "日期時間", "description": "事件日期時間（選擇性，預設為現在）" },
+        "memo": { "name": "備註", "description": "選擇性備註" }
+      }
+    },
+    "add_walk": {
+      "name": "記錄散步",
+      "description": "向 PiyoLog 註冊散步事件",
+      "fields": {
+        "baby_id": { "name": "寶寶 ID", "description": "寶寶 ID（選擇性，未指定則使用預設）" },
+        "baby_index": { "name": "寶寶編號", "description": "寶寶索引（從 0 開始，選擇性）" },
+        "datetime": { "name": "日期時間", "description": "事件日期時間（選擇性，預設為現在）" },
+        "memo": { "name": "備註", "description": "選擇性備註" }
+      }
+    },
+    "force_sync": {
+      "name": "強制同步（診斷用）",
+      "description": "手動執行與 PiyoLog API 的同步（用於測試和除錯）"
+    }
+  }
+}
